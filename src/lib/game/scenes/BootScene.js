@@ -23,7 +23,7 @@ export class BootScene extends Phaser.Scene {
             fontFamily: 'monospace',
             color: '#ffffff'
         }).setOrigin(0.5);
-
+        
         this.add.text(cx, cy - 10, 'Loading...', {
             fontSize: '14px',
             fontFamily: 'monospace',
@@ -42,6 +42,8 @@ export class BootScene extends Phaser.Scene {
     // ─── CREATE ──────────────────────────────────────────────────────────────
     // generate all placeholder textures.
     create() {
-        
+        this.time.delayedCall(300, () => {
+            this.scene.start('GameScene');
+        });
     }
 }

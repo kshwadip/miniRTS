@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { BootScene } from './scenes/BootScene.js';
+import { GameScene } from './scenes/GameScene.js';
 
 export function initGame(parent) {
     const config = {
@@ -8,7 +9,7 @@ export function initGame(parent) {
         height: window.innerHeight,
         parent: parent,            // Mount into the div we bound in Svelte
         backgroundColor: '#1a1a2e',
-        scene: [BootScene],
+        scene: [BootScene, GameScene],
         scale: {
             mode: Phaser.Scale.RESIZE,        // Fills the parent div
             autoCenter: Phaser.Scale.CENTER_BOTH
