@@ -33,6 +33,7 @@
 	"dependencies": {
 		"@tailwindcss/typography": "^0.5.15",
 		"drizzle-orm": "^0.33.0",
+		"embedded-postgres": "^18.4.0-beta.17",
 		"phaser": "^3.90.0",
 		"postgres": "^3.4.4"
 	}
