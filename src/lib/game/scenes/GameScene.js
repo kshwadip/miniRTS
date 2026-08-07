@@ -56,7 +56,7 @@ export class GameScene extends Phaser.Scene {
 
         // ─── EDGE SCROLL SETTINGS ───
         const EDGE_SIZE = 40;
-        const EDGE_SPEED = 8;
+        const EDGE_SPEED = 12;
         this.edgeScroll = { enabled: true, edgeSize: EDGE_SIZE, speed: EDGE_SPEED };
 
         // ─── POINTER WINDOW TRACKING ───
@@ -124,6 +124,7 @@ export class GameScene extends Phaser.Scene {
         // ─── KEYBOARD SCROLL ───
         this.wasd = this.input.keyboard.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT');
 
+        // ─── FULLSCREEN TOGGLE ───
         this.input.keyboard.on('keydown-BACKTICK', () => {
             if (document.fullscreenElement) {
                 document.exitFullscreen();

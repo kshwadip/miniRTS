@@ -1,6 +1,7 @@
 <script>
     import { onMount, onDestroy } from 'svelte';
     import { initGame, destroyGame } from '$lib/game/Game.js';
+    import HUD from '$lib/components/HUD.svelte';
 
     let canvasContainer;
     let game;
@@ -19,6 +20,7 @@
 <!-- The canvas container sits behind the HUD -->
 <div class="game-wrapper">
     <div bind:this={canvasContainer} id="game-container"></div>
+    <HUD />
 </div>
 
 <style>
