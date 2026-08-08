@@ -1,8 +1,9 @@
 import Phaser from 'phaser';
 
 import { TileMap } from '../systems/TileMap';
+import { BuildingManager } from '../systems/BuildingManager.js';
 import { tileToScreen, screenToTile } from '../utils/IsoMath.js';
-import { MAP_WIDTH, MAP_HEIGHT, TILE_WIDTH, TILE_HEIGHT } from '../utils/Constants.js';
+import { MAP_WIDTH, MAP_HEIGHT, TILE_WIDTH, TILE_HEIGHT, PLAYER, AI } from '../utils/Constants.js';
 
 export class GameScene extends Phaser.Scene {
     constructor() {
@@ -17,9 +18,23 @@ export class GameScene extends Phaser.Scene {
         this.cameras.main.setBounds((-(worldW / 2) - 600), (-0 - 400), (worldW + 1400), (worldH + 600));
         this.cameras.main.setZoom(1);
 
-        // ── Systems ──
+        // ── Systems — instantiate in dependency order ──
         this.tileMap = new TileMap(this);
+        this.buildingManager = new BuildingManager(this);
+
+
+        // ── Generate the world ──
         this.tileMap.generate();
+
+        // ── Place starting structures ──
+        this._placeStartingPositions();
+
+        // ── Camera starting position — center on player Village Hall ──
+        const playerHall = this.buildingManager.getBuildingsForOwner(PLAYER)[0];
+        if (playerHall) {
+            const { x, y } = tileToScreen(playerHall.tileX, playerHall.tileY);
+            this.cameras.main.centerOn(x, y);
+        }
 
         // ── Controls ──
         this._setupControls();
@@ -48,6 +63,35 @@ export class GameScene extends Phaser.Scene {
     shutdown() {
         document.removeEventListener('mouseenter', this._onMouseEnter);
         document.removeEventListener('mouseleave', this._onMouseLeave);
+    }
+
+    // ─── STARTING POSITIONS ──────────────────────────────────────────────────
+    _placeStartingPositions() {
+        // Find two valid starting tiles — one per corner quadrant
+        const playerStart = this._findStartTile(8, 8);
+        const aiStart     = this._findStartTile(MAP_WIDTH - 16, MAP_HEIGHT - 16);
+
+        // Player starting buildings
+        this.buildingManager.createBuilding(PLAYER, 'village_hall',     playerStart.x,     playerStart.y);
+    
+        // AI starting buildings
+        this.buildingManager.createBuilding(AI, 'village_hall',      aiStart.x,     aiStart.y);    
+    }
+
+    _findStartTile(preferX, preferY) {
+        // Find nearest walkable tile to preferred position
+        for (let r = 0; r < 10; r++) {
+            for (let dx = -r; dx <= r; dx++) {
+                for (let dy = -r; dy <= r; dy++) {
+                    const x = preferX + dx;
+                    const y = preferY + dy;
+                    if (this.tileMap.isWalkable(x, y, false, false)) {
+                        return { x, y };
+                    }
+                }
+            }
+        }
+        return { x: preferX, y: preferY }; // Fallback
     }
 
     // ─── CONTROLS SETUP ──────────────────────────────────────────────────────

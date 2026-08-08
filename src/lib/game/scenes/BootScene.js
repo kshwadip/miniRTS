@@ -44,6 +44,7 @@ export class BootScene extends Phaser.Scene {
     // generate all placeholder textures.
     create() {
         this._generateTileTextures();
+        this._generateBuildingTextures();
 
         this.time.delayedCall(300, () => {
             this.scene.start('GameScene');
@@ -160,5 +161,176 @@ export class BootScene extends Phaser.Scene {
         stoneDep.fillEllipse(hw - 6, hh - 3, 8, 6);
         stoneDep.generateTexture('tile_stone', W, H);
         stoneDep.destroy();
+    }
+
+    // ─── BUILDING TEXTURES ───────────────────────────────────────────────────
+    // Buildings are larger — 64x64 sprites
+    // Each has a player tint applied in code — only neutral textures generated here
+    _generateBuildingTextures() {
+        const buildings = [
+            {
+                key: 'village_hall',
+                draw: (g) => {
+                    // Base — large stone structure
+                    g.fillStyle(0x9b8b6b);
+                    g.fillRect(8, 24, 48, 32);
+                    // Roof
+                    g.fillStyle(0x7b6b4b);
+                    g.fillTriangle(4, 28, 32, 8, 60, 28);
+                    // Door
+                    g.fillStyle(0x5a3a1a);
+                    g.fillRect(26, 40, 12, 16);
+                    // Windows
+                    g.fillStyle(0xffee88, 0.6);
+                    g.fillRect(14, 32, 8, 8);
+                    g.fillRect(42, 32, 8, 8);
+                    // Chimney
+                    g.fillStyle(0x8a7a5a);
+                    g.fillRect(44, 10, 6, 18);
+                    // Smoke suggestion
+                    g.fillStyle(0xcccccc, 0.3);
+                    g.fillCircle(47, 8, 4);
+                    g.fillCircle(49, 5, 3);
+                }
+            },
+            {
+                key: 'training_grounds',
+                draw: (g) => {
+                    // Barracks — long rectangular structure
+                    g.fillStyle(0x8b7b5b);
+                    g.fillRect(4, 28, 56, 28);
+                    // Roof
+                    g.fillStyle(0x6b5b3b);
+                    g.fillRect(4, 22, 56, 8);
+                    // Training yard suggestion — fence
+                    g.lineStyle(2, 0x6b4c35);
+                    g.strokeRect(2, 48, 20, 8);
+                    // Weapon rack
+                    g.fillStyle(0xaaaaaa);
+                    g.fillRect(42, 26, 2, 20);
+                    g.fillRect(46, 26, 2, 20);
+                    g.fillRect(50, 26, 2, 20);
+                    // Door
+                    g.fillStyle(0x5a3a1a);
+                    g.fillRect(28, 38, 10, 18);
+                }
+            },
+            {
+                key: 'archery_post',
+                draw: (g) => {
+                    // Tower-like structure for archery
+                    g.fillStyle(0x7a8a6a);
+                    g.fillRect(14, 16, 36, 40);
+                    // Battlements at top
+                    g.fillStyle(0x6a7a5a);
+                    for (let i = 0; i < 4; i++) {
+                        g.fillRect(14 + i * 10, 10, 6, 10);
+                    }
+                    // Arrow slits
+                    g.fillStyle(0x2a2a1a);
+                    g.fillRect(22, 28, 4, 10);
+                    g.fillRect(38, 28, 4, 10);
+                    // Door
+                    g.fillStyle(0x5a3a1a);
+                    g.fillRect(26, 42, 12, 14);
+                }
+            },
+            {
+                key: 'mount_yard',
+                draw: (g) => {
+                    // Stable — wide low building with fence
+                    g.fillStyle(0xa07850);
+                    g.fillRect(6, 28, 52, 24);
+                    // Roof
+                    g.fillStyle(0x7a5830);
+                    g.fillTriangle(4, 32, 32, 16, 60, 32);
+                    // Fence posts
+                    g.fillStyle(0x8b6347);
+                    for (let i = 0; i < 5; i++) {
+                        g.fillRect(4 + i * 14, 46, 3, 10);
+                    }
+                    // Fence rail
+                    g.lineStyle(2, 0x8b6347);
+                    g.lineBetween(4, 50, 60, 50);
+                    // Door — wide for horses
+                    g.fillStyle(0x5a3a1a);
+                    g.fillRect(22, 36, 20, 16);
+                }
+            },
+            {
+                key: 'granary',
+                draw: (g) => {
+                    // Round granary structure
+                    g.fillStyle(0xd4a860);
+                    g.fillEllipse(32, 38, 48, 36);
+                    // Conical roof
+                    g.fillStyle(0xa07830);
+                    g.fillTriangle(10, 28, 32, 10, 54, 28);
+                    // Bands around the granary
+                    g.lineStyle(2, 0xa07830, 0.6);
+                    g.strokeEllipse(32, 36, 44, 14);
+                    g.strokeEllipse(32, 44, 44, 10);
+                    // Door
+                    g.fillStyle(0x5a3a1a);
+                    g.fillRect(26, 42, 12, 14);
+                }
+            },
+            {
+                key: 'woodcutters_lodge',
+                draw: (g) => {
+                    // Small cabin with wood pile
+                    g.fillStyle(0x8b6347);
+                    g.fillRect(12, 30, 36, 24);
+                    // Roof
+                    g.fillStyle(0x5a3a1a);
+                    g.fillTriangle(8, 34, 30, 18, 56, 34);
+                    // Log pile
+                    g.fillStyle(0xa07830);
+                    g.fillRect(2, 44, 14, 8);
+                    g.fillStyle(0x8b6347);
+                    g.fillEllipse(5, 44, 8, 5);
+                    g.fillEllipse(12, 44, 8, 5);
+                    g.fillRect(2, 36, 14, 10);
+                    // Door
+                    g.fillStyle(0x3a1a0a);
+                    g.fillRect(22, 40, 10, 14);
+                    // Axe leaning on wall
+                    g.fillStyle(0x888888);
+                    g.fillRect(50, 28, 2, 16);
+                    g.fillRect(48, 28, 6, 4);
+                }
+            },
+            {
+                key: 'mining_post',
+                draw: (g) => {
+                    // Functional industrial look
+                    g.fillStyle(0x6a6a5a);
+                    g.fillRect(10, 28, 44, 26);
+                    // Shed roof — flat angled
+                    g.fillStyle(0x4a4a3a);
+                    g.fillRect(8, 22, 48, 8);
+                    // Support beam
+                    g.fillStyle(0x8b6347);
+                    g.fillRect(14, 22, 4, 32);
+                    g.fillRect(46, 22, 4, 32);
+                    // Mine entrance suggestion
+                    g.fillStyle(0x1a1a1a);
+                    g.fillEllipse(32, 48, 24, 12);
+                    // Cart tracks
+                    g.lineStyle(2, 0x888866);
+                    g.lineBetween(22, 52, 42, 52);
+                    g.lineBetween(24, 48, 24, 56);
+                    g.lineBetween(32, 48, 32, 56);
+                    g.lineBetween(40, 48, 40, 56);
+                }
+            }
+        ];
+
+        buildings.forEach(({ key, draw }) => {
+            const g = this.add.graphics();
+            draw(g);
+            g.generateTexture(`building_${key}`, 64, 64);
+            g.destroy();
+        });
     }
 }

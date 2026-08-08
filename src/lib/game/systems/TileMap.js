@@ -102,8 +102,8 @@ export class TileMap {
     _placeResources() {
         // Place gold and stone deposits away from water and edges
         const deposits = [
-            { type: TILE.GOLD_DEPOSIT,  count: 6, amount: 800  },
-            { type: TILE.STONE_DEPOSIT, count: 4, amount: 1000 }
+            { type: TILE.GOLD_DEPOSIT,  count: 10, amount: 1000  },
+            { type: TILE.STONE_DEPOSIT, count: 10, amount: 1000 }
         ];
 
         deposits.forEach(({ type, count, amount }) => {
