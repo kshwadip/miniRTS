@@ -3,9 +3,10 @@ import Hammer from 'hammerjs';
 
 import { TileMap } from '../systems/TileMap';
 import { ResourceManager } from '../systems/ResourceManager.js';
+import { UnitManager }     from '../systems/UnitManager.js';
 import { BuildingManager } from '../systems/BuildingManager.js';
 import { tileToScreen, screenToTile } from '../utils/IsoMath.js';
-import { MAP_WIDTH, MAP_HEIGHT, TILE_WIDTH, TILE_HEIGHT, PLAYER, AI } from '../utils/Constants.js';
+import { MAP_WIDTH, MAP_HEIGHT, TILE_WIDTH, TILE_HEIGHT, PLAYER, AI, UNIT_TYPE } from '../utils/Constants.js';
 import { resources, population, isNight, isRaining, timeRemaining, selectedUnits, gameMessage } from '$lib/stores/gameState.js';
 
 export class GameScene extends Phaser.Scene {
@@ -28,6 +29,7 @@ export class GameScene extends Phaser.Scene {
         // ── Systems ──
         this.tileMap = new TileMap(this);
         this.resourceManager = new ResourceManager();
+        this.unitManager     = new UnitManager(this);
         this.buildingManager = new BuildingManager(this);
 
         this.tileMap.generate();
@@ -46,6 +48,9 @@ export class GameScene extends Phaser.Scene {
         };
 
         this._updateStores();
+
+        // ── Fog of war initial reveal around starting positions ──
+        const playerUnits = this.unitManager.getUnitsForOwner(PLAYER);
 
         // ── Controls (desktop/mouse) ──
         this._setupControls();
@@ -169,8 +174,18 @@ export class GameScene extends Phaser.Scene {
         // Player starting buildings
         this.buildingManager.createBuilding(PLAYER, 'village_hall', playerStart.x, playerStart.y);
 
+        // Player starting units — 3 villagers
+        this.unitManager.createUnit(PLAYER, UNIT_TYPE.VILLAGER, playerStart.x + 2, playerStart.y + 1);
+        this.unitManager.createUnit(PLAYER, UNIT_TYPE.VILLAGER, playerStart.x + 3, playerStart.y + 1);
+        this.unitManager.createUnit(PLAYER, UNIT_TYPE.VILLAGER, playerStart.x + 4, playerStart.y + 1);
+
         // AI starting buildings
         this.buildingManager.createBuilding(AI, 'village_hall', aiStart.x, aiStart.y);
+
+        // AI starting units
+        this.unitManager.createUnit(AI, UNIT_TYPE.VILLAGER, aiStart.x + 2, aiStart.y + 1);
+        this.unitManager.createUnit(AI, UNIT_TYPE.VILLAGER, aiStart.x + 3, aiStart.y + 1);
+        this.unitManager.createUnit(AI, UNIT_TYPE.INFANTRY, aiStart.x + 5, aiStart.y + 2);
 
         this.tileMap.placeStartingResources([playerStart, aiStart]);
     }
@@ -245,24 +260,24 @@ export class GameScene extends Phaser.Scene {
 
         // ─── DESKTOP ONLY – mouse events ──────────────────────────────
         if (isDesktop) {
-            // Left‑click → select
-            this.input.on('pointerup', (pointer) => {
-                if (!pointer.leftButtonReleased()) return;
-                if (Math.abs(pointer.upX - pointer.downX) > 10) return;
-                if (Math.abs(pointer.upY - pointer.downY) > 10) return;
+            // // Left‑click → select
+            // this.input.on('pointerup', (pointer) => {
+            //     if (!pointer.leftButtonReleased()) return;
+            //     if (Math.abs(pointer.upX - pointer.downX) > 10) return;
+            //     if (Math.abs(pointer.upY - pointer.downY) > 10) return;
 
-                const worldPos = cam.getWorldPoint(pointer.x, pointer.y);
-                const tilePos = screenToTile(worldPos.x, worldPos.y);
-                this._handleTap(tilePos.tileX, tilePos.tileY, pointer);
-            });
+            //     const worldPos = cam.getWorldPoint(pointer.x, pointer.y);
+            //     const tilePos = screenToTile(worldPos.x, worldPos.y);
+            //     this._handleTap(tilePos.tileX, tilePos.tileY, pointer);
+            // });
 
-            // Right‑click → command
-            this.input.on('pointerdown', (pointer) => {
-                if (!pointer.rightButtonDown()) return;
-                const worldPos = cam.getWorldPoint(pointer.x, pointer.y);
-                const tilePos = screenToTile(worldPos.x, worldPos.y);
-                this._issueCommand(tilePos.tileX, tilePos.tileY);
-            });
+            // // Right‑click → command
+            // this.input.on('pointerdown', (pointer) => {
+            //     if (!pointer.rightButtonDown()) return;
+            //     const worldPos = cam.getWorldPoint(pointer.x, pointer.y);
+            //     const tilePos = screenToTile(worldPos.x, worldPos.y);
+            //     this._issueCommand(tilePos.tileX, tilePos.tileY);
+            // });
 
             // Scroll wheel → zoom
             this.input.on('wheel', (pointer, gameObjects, deltaX, deltaY) => {

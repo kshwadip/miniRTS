@@ -44,6 +44,7 @@ export class BootScene extends Phaser.Scene {
     // generate all placeholder textures.
     create() {
         this._generateTileTextures();
+        this._generateUnitTextures();
         this._generateBuildingTextures();
 
         this.time.delayedCall(300, () => {
@@ -161,6 +162,116 @@ export class BootScene extends Phaser.Scene {
         stoneDep.fillEllipse(hw - 6, hh - 3, 8, 6);
         stoneDep.generateTexture('tile_stone', W, H);
         stoneDep.destroy();
+    }
+
+    // ─── UNIT TEXTURES ───────────────────────────────────────────────────────
+    // Each unit is a 32x32 sprite
+    // Two versions of each: blue (player) and red (AI)
+    // Shape communicates unit type — silhouette readable at small size
+    _generateUnitTextures() {
+        const unitDefs = [
+            {
+                key: 'villager',
+                // Small figure with a tool — communicates civilian
+                draw: (g, color) => {
+                    // Body
+                    g.fillStyle(color);
+                    g.fillRect(12, 12, 8, 12);
+                    // Head
+                    g.fillCircle(16, 9, 6);
+                    // Tool (axe suggestion)
+                    g.fillStyle(0x888888);
+                    g.fillRect(18, 10, 2, 10);
+                    g.fillRect(18, 10, 6, 3);
+                }
+            },
+            {
+                key: 'infantry',
+                // Stocky armored figure — communicates heavy melee
+                draw: (g, color) => {
+                    // Shield
+                    g.fillStyle(0x888888);
+                    g.fillRect(6, 12, 6, 12);
+                    // Body — wider than villager
+                    g.fillStyle(color);
+                    g.fillRect(12, 10, 10, 14);
+                    // Head with helmet
+                    g.fillStyle(0x888888);
+                    g.fillRect(12, 4, 10, 8);
+                    // Sword
+                    g.fillStyle(0xcccccc);
+                    g.fillRect(22, 8, 2, 14);
+                }
+            },
+            {
+                key: 'ranged',
+                // Slim figure with bow — communicates ranged
+                draw: (g, color) => {
+                    // Body — slimmer
+                    g.fillStyle(color);
+                    g.fillRect(13, 12, 7, 12);
+                    // Head
+                    g.fillCircle(16, 9, 5);
+                    // Bow
+                    g.lineStyle(2, 0x8b6347);
+                    g.strokeEllipse(6, 14, 6, 16);
+                    // Arrow
+                    g.fillStyle(0xaaaaaa);
+                    g.fillRect(8, 15, 14, 1);
+                    g.fillTriangle(22, 13, 22, 17, 26, 15);
+                }
+            },
+            {
+                key: 'cavalry',
+                // Figure on horse — wider and taller
+                draw: (g, color) => {
+                    // Horse body
+                    g.fillStyle(0x8b6347);
+                    g.fillEllipse(16, 20, 22, 10);
+                    // Horse legs
+                    g.fillRect(8,  24, 3, 6);
+                    g.fillRect(13, 24, 3, 6);
+                    g.fillRect(18, 24, 3, 6);
+                    g.fillRect(23, 24, 3, 6);
+                    // Horse head
+                    g.fillRect(24, 14, 6, 8);
+                    // Rider
+                    g.fillStyle(color);
+                    g.fillRect(12, 10, 9, 12);
+                    // Rider head
+                    g.fillStyle(0x888888);
+                    g.fillCircle(16, 7, 5);
+                    // Lance suggestion
+                    g.fillStyle(0xaaaaaa);
+                    g.fillRect(20, 6, 1, 18);
+                }
+            }
+        ];
+
+        const PLAYER_COLOR = 0x4488ff;  // Blue
+        const AI_COLOR     = 0xff4444;  // Red
+
+        unitDefs.forEach(({ key, draw }) => {
+            // Player version
+            const playerGfx = this.add.graphics();
+            draw(playerGfx, PLAYER_COLOR);
+            playerGfx.generateTexture(`unit_${key}_blue`, 32, 32);
+            playerGfx.destroy();
+
+            // AI version
+            const aiGfx = this.add.graphics();
+            draw(aiGfx, AI_COLOR);
+            aiGfx.generateTexture(`unit_${key}_red`, 32, 32);
+            aiGfx.destroy();
+
+            // Sneak stance version — dimmed outline only
+            // Used when unit is in sneak stance and visible to SELF only
+            const sneakGfx = this.add.graphics();
+            sneakGfx.lineStyle(1, 0x888888, 0.4);
+            sneakGfx.strokeRect(8, 6, 16, 20);
+            sneakGfx.generateTexture(`unit_${key}_sneak`, 32, 32);
+            sneakGfx.destroy();
+        });
     }
 
     // ─── BUILDING TEXTURES ───────────────────────────────────────────────────
