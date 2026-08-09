@@ -1,9 +1,12 @@
 import Phaser from 'phaser';
+import Hammer from 'hammerjs';
 
 import { TileMap } from '../systems/TileMap';
+import { ResourceManager } from '../systems/ResourceManager.js';
 import { BuildingManager } from '../systems/BuildingManager.js';
 import { tileToScreen, screenToTile } from '../utils/IsoMath.js';
 import { MAP_WIDTH, MAP_HEIGHT, TILE_WIDTH, TILE_HEIGHT, PLAYER, AI } from '../utils/Constants.js';
+import { resources, population, isNight, isRaining, timeRemaining, selectedUnits, gameMessage } from '$lib/stores/gameState.js';
 
 export class GameScene extends Phaser.Scene {
     constructor() {
@@ -15,40 +18,127 @@ export class GameScene extends Phaser.Scene {
         // ── World bounds ──
         const worldW = (MAP_WIDTH + MAP_HEIGHT) * (TILE_WIDTH / 2);
         const worldH = (MAP_WIDTH + MAP_HEIGHT) * (TILE_HEIGHT / 2);
-        this.cameras.main.setBounds((-(worldW / 2) - 600), (-0 - 400), (worldW + 1400), (worldH + 600));
+        if (this.sys.game.device.os.desktop) {
+            this.cameras.main.setBounds((-(worldW / 2) - 600), (-0 - 400), (worldW + 1400), (worldH + 600));
+        } else {
+            this.cameras.main.setBounds((-(worldW / 2) - 100), (-0 - 200), (worldW + 400), (worldH + 200));
+        }
         this.cameras.main.setZoom(1);
 
-        // ── Systems — instantiate in dependency order ──
+        // ── Systems ──
         this.tileMap = new TileMap(this);
+        this.resourceManager = new ResourceManager();
         this.buildingManager = new BuildingManager(this);
 
-
-        // ── Generate the world ──
         this.tileMap.generate();
-
-        // ── Place starting structures ──
         this._placeStartingPositions();
 
-        // ── Camera starting position — center on player Village Hall ──
+        // ── Camera start ──
         const playerHall = this.buildingManager.getBuildingsForOwner(PLAYER)[0];
         if (playerHall) {
             const { x, y } = tileToScreen(playerHall.tileX, playerHall.tileY);
             this.cameras.main.centerOn(x, y);
         }
 
-        // ── Controls ──
+        // ── Resource store sync ──
+        this.resourceManager.onResourceChange = (owner, res) => {
+            if (owner === PLAYER) resources.set(res);
+        };
+
+        this._updateStores();
+
+        // ── Controls (desktop/mouse) ──
         this._setupControls();
 
-        // At the end of create() — ask for fullscreen when game loads
-        // Browser requires this to be triggered by a user gesture
-        // So wire it to the first click instead of firing immediately
-        this.input.once('pointerdown', () => {
-            if (!document.fullscreenElement) {
-                document.documentElement.requestFullscreen().catch(() => {
-                    // Browser blocked it — user can use F key instead
-                });
-            }
-        });
+        // ─── HAMMER.JS – mobile gestures ──────────────────────────────────────
+        if (!this.sys.game.device.os.desktop) {
+            const canvas = this.sys.game.canvas;
+            const hammer = new Hammer(canvas);
+
+            hammer.get('pan').set({ direction: Hammer.DIRECTION_ALL, threshold: 5 });
+            hammer.get('pinch').set({ enable: true });
+            hammer.get('pinch').recognizeWith(hammer.get('pan'));
+
+            const cam = this.cameras.main;
+
+            // ---- Pan state (incremental) ----
+            let lastPanX = 0, lastPanY = 0;
+            let isPinching = false;
+            let panCooldown = false;   // if true, ignore pan events temporarily
+
+            hammer.on('panstart', (e) => {
+                if (isPinching || panCooldown) return;
+                lastPanX = e.center.x;
+                lastPanY = e.center.y;
+            });
+
+            hammer.on('pan', (e) => {
+                if (isPinching || panCooldown) return;
+                const dx = e.center.x - lastPanX;
+                const dy = e.center.y - lastPanY;
+                cam.scrollX -= dx / cam.zoom;
+                cam.scrollY -= dy / cam.zoom;
+                lastPanX = e.center.x;
+                lastPanY = e.center.y;
+            });
+
+            // ---- Pinch state ----
+            let pinchStartZoom = 1;
+
+            hammer.on('pinchstart', (e) => {
+                isPinching = true;
+                panCooldown = false;   // cancel any pending cooldown
+                pinchStartZoom = cam.zoom;
+                // Reset last pan position to avoid jump after pinch
+                lastPanX = e.center.x;
+                lastPanY = e.center.y;
+            });
+
+            hammer.on('pinch', (e) => {
+                let newZoom = pinchStartZoom * e.scale;
+                newZoom = Phaser.Math.Clamp(newZoom, 0.5, 2.0);
+
+                const worldBefore = cam.getWorldPoint(e.center.x, e.center.y);
+                cam.setZoom(newZoom);
+                cam.preRender();
+                const worldAfter = cam.getWorldPoint(e.center.x, e.center.y);
+                cam.scrollX += (worldBefore.x - worldAfter.x);
+                cam.scrollY += (worldBefore.y - worldAfter.y);
+            });
+
+            hammer.on('pinchend', (e) => {
+                isPinching = false;
+                // Reset last pan position to the center where pinch ended
+                lastPanX = e.center.x;
+                lastPanY = e.center.y;
+                // Activate cooldown to prevent a stray pan event from the remaining finger
+                panCooldown = true;
+                // Clear cooldown after 150ms (enough to skip the immediate pan)
+                setTimeout(() => {
+                    panCooldown = false;
+                }, 150);
+            });
+
+            // ---- Tap (select) ----
+            hammer.on('tap', (e) => {
+                // Ignore taps if a pinch just ended (cooldown) or if pinching
+                if (isPinching || panCooldown) return;
+                const worldPos = cam.getWorldPoint(e.center.x, e.center.y);
+                const tilePos = screenToTile(worldPos.x, worldPos.y);
+                this._handleTap(tilePos.tileX, tilePos.tileY);
+            });
+
+            // ---- Press (long‑press → command) ----
+            hammer.on('press', (e) => {
+                if (isPinching || panCooldown) return;
+                const worldPos = cam.getWorldPoint(e.center.x, e.center.y);
+                const tilePos = screenToTile(worldPos.x, worldPos.y);
+                this._issueCommand(tilePos.tileX, tilePos.tileY);
+                if (navigator.vibrate) navigator.vibrate(20);
+            });
+
+            this.hammer = hammer;
+        }
     }
 
     // ─── UPDATE ──────────────────────────────────────────────────────────────
@@ -61,21 +151,26 @@ export class GameScene extends Phaser.Scene {
     // Removes native event listeners to prevent memory leaks and
     // duplicate handlers if the scene restarts
     shutdown() {
+        if (this.hammer) {
+            this.hammer.destroy();
+            this.hammer = null;
+        }
         document.removeEventListener('mouseenter', this._onMouseEnter);
         document.removeEventListener('mouseleave', this._onMouseLeave);
+        clearTimeout(this._longPress?.timer);
     }
 
     // ─── STARTING POSITIONS ──────────────────────────────────────────────────
     _placeStartingPositions() {
         // Find two valid starting tiles — one per corner quadrant
         const playerStart = this._findStartTile(8, 8);
-        const aiStart     = this._findStartTile(MAP_WIDTH - 16, MAP_HEIGHT - 16);
+        const aiStart = this._findStartTile(MAP_WIDTH - 16, MAP_HEIGHT - 16);
 
         // Player starting buildings
-        this.buildingManager.createBuilding(PLAYER, 'village_hall',     playerStart.x,     playerStart.y);
-    
+        this.buildingManager.createBuilding(PLAYER, 'village_hall', playerStart.x, playerStart.y);
+
         // AI starting buildings
-        this.buildingManager.createBuilding(AI, 'village_hall',      aiStart.x,     aiStart.y);    
+        this.buildingManager.createBuilding(AI, 'village_hall', aiStart.x, aiStart.y);
     }
 
     _findStartTile(preferX, preferY) {
@@ -97,78 +192,28 @@ export class GameScene extends Phaser.Scene {
     // ─── CONTROLS SETUP ──────────────────────────────────────────────────────
     _setupControls() {
         const cam = this.cameras.main;
+        const isDesktop = this.sys.game.device.os.desktop;
 
-        // ─── EDGE SCROLL SETTINGS ───
+        // ─── EDGE SCROLL (desktop only) ───
         const EDGE_SIZE = 40;
         const EDGE_SPEED = 12;
-        this.edgeScroll = { enabled: true, edgeSize: EDGE_SIZE, speed: EDGE_SPEED };
+        this.edgeScroll = {
+            enabled: isDesktop,
+            edgeSize: EDGE_SIZE,
+            speed: EDGE_SPEED
+        };
 
-        // ─── POINTER WINDOW TRACKING ───
-        // Native document events instead of Phaser's pointerover/pointerout
-        // Browser handles these at OS level — never missed regardless of
-        // how fast the pointer moves out of the window
+        // ─── POINTER WINDOW TRACKING (for edge scroll) ───
         this.pointerInWindow = true;
-
         this._onMouseEnter = () => { this.pointerInWindow = true; };
         this._onMouseLeave = () => { this.pointerInWindow = false; };
-
         document.addEventListener('mouseenter', this._onMouseEnter);
         document.addEventListener('mouseleave', this._onMouseLeave);
 
-        // ─── LEFT CLICK — UNIT SELECTION ───
-        this.input.on('pointerup', (pointer) => {
-            if (!pointer.leftButtonReleased()) return;
-            if (Math.abs(pointer.upX - pointer.downX) > 10) return;
-            if (Math.abs(pointer.upY - pointer.downY) > 10) return;
-
-            const worldPos = cam.getWorldPoint(pointer.x, pointer.y);
-            const tilePos = screenToTile(worldPos.x, worldPos.y);
-            this._handleTap(tilePos.tileX, tilePos.tileY, pointer);
-        });
-
-        // ─── RIGHT CLICK — MOVE / ATTACK COMMAND ───
-        this.input.on('pointerdown', (pointer) => {
-            if (!pointer.rightButtonDown()) return;
-            const worldPos = cam.getWorldPoint(pointer.x, pointer.y);
-            const tilePos = screenToTile(worldPos.x, worldPos.y);
-            this._issueCommand(tilePos.tileX, tilePos.tileY);
-        });
-
-        // ─── SCROLL WHEEL — ZOOM ───
-        this.input.on('wheel', (pointer, gameObjects, deltaX, deltaY) => {
-            const newZoom = Phaser.Math.Clamp(cam.zoom - deltaY * 0.001, 0.5, 2.0);
-            cam.setZoom(newZoom);
-        });
-
-        // ─── TOUCH PINCH — ZOOM ───
-        this.input.addPointer(1);
-        let pinchDist = null;
-
-        this.input.on('pointermove', () => {
-            const p1 = this.input.pointer1;
-            const p2 = this.input.pointer2;
-            if (!p1.isDown || !p2.isDown) { pinchDist = null; return; }
-
-            const currentDist = Phaser.Math.Distance.Between(p1.x, p1.y, p2.x, p2.y);
-            if (pinchDist === null) { pinchDist = currentDist; return; }
-
-            const newZoom = Phaser.Math.Clamp(
-                cam.zoom + (currentDist - pinchDist) * 0.005,
-                0.5, 2.0
-            );
-            cam.setZoom(newZoom);
-            pinchDist = currentDist;
-        });
-
-        // ─── SELECTION MODE ───
-        this.selectionMode = false;
-        this.selectionRect = null;
-        this.selectionStart = null;
-
-        // ─── KEYBOARD SCROLL ───
+        // ─── KEYBOARD SCROLL ────────────────────────────────────────────
         this.wasd = this.input.keyboard.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT');
 
-        // ─── FULLSCREEN TOGGLE ───
+        // ─── FULLSCREEN TOGGLE ──────────────────────────────────────────
         this.input.keyboard.on('keydown-BACKTICK', () => {
             if (document.fullscreenElement) {
                 document.exitFullscreen();
@@ -177,12 +222,47 @@ export class GameScene extends Phaser.Scene {
             }
         });
 
+        // ─── SELECTION MODE STATE ──────────────────────────────────────
+        this.selectionMode = false;
+        this.selectionRect = null;
+        this.selectionStart = null;
+
+        // ─── DESKTOP ONLY – mouse events ──────────────────────────────
+        if (isDesktop) {
+            // Left‑click → select
+            this.input.on('pointerup', (pointer) => {
+                if (!pointer.leftButtonReleased()) return;
+                if (Math.abs(pointer.upX - pointer.downX) > 10) return;
+                if (Math.abs(pointer.upY - pointer.downY) > 10) return;
+
+                const worldPos = cam.getWorldPoint(pointer.x, pointer.y);
+                const tilePos = screenToTile(worldPos.x, worldPos.y);
+                this._handleTap(tilePos.tileX, tilePos.tileY, pointer);
+            });
+
+            // Right‑click → command
+            this.input.on('pointerdown', (pointer) => {
+                if (!pointer.rightButtonDown()) return;
+                const worldPos = cam.getWorldPoint(pointer.x, pointer.y);
+                const tilePos = screenToTile(worldPos.x, worldPos.y);
+                this._issueCommand(tilePos.tileX, tilePos.tileY);
+            });
+
+            // Scroll wheel → zoom
+            this.input.on('wheel', (pointer, gameObjects, deltaX, deltaY) => {
+                const newZoom = Phaser.Math.Clamp(cam.zoom - deltaY * 0.001, 0.5, 2.0);
+                cam.setZoom(newZoom);
+            });
+        }
+
+        // On mobile, we do NOT attach any pointer events – Hammer handles everything.
     }
 
     // ─── EDGE SCROLL ─────────────────────────────────────────────────────────
     _updateEdgeScroll() {
         if (!this.edgeScroll.enabled) return;
         if (!this.pointerInWindow) return;
+        if (!this.sys.game.device.os.desktop) return;
 
         const pointer = this.input.activePointer;
         const cam = this.cameras.main;
@@ -202,7 +282,7 @@ export class GameScene extends Phaser.Scene {
 
     // ─── KEYBOARD SCROLL ─────────────────────────────────────────────────────
     _updateKeyboardScroll() {
-        const speed = 8;
+        const speed = 12;
         const cam = this.cameras.main;
         const { W, A, S, D, UP, DOWN, LEFT, RIGHT } = this.wasd;
 
@@ -210,5 +290,15 @@ export class GameScene extends Phaser.Scene {
         if (D.isDown || RIGHT.isDown) cam.scrollX += speed;
         if (W.isDown || UP.isDown) cam.scrollY -= speed;
         if (S.isDown || DOWN.isDown) cam.scrollY += speed;
+    }
+
+    // ─── SVELTE STORE UPDATES ────────────────────────────────────────────────
+    _updateStores() {
+        resources.set({
+            wood: this.resourceManager.getDisplay(PLAYER, 'wood'),
+            food: this.resourceManager.getDisplay(PLAYER, 'food'),
+            gold: this.resourceManager.getDisplay(PLAYER, 'gold'),
+            stone: this.resourceManager.getDisplay(PLAYER, 'stone')
+        });
     }
 }

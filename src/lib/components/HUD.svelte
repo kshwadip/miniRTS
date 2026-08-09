@@ -1,5 +1,14 @@
 <script>
     import { resources, population, isNight, isRaining, selectedUnits } from '$lib/stores/gameState.js';
+
+    // Fullscreen toggle function
+    function toggleFullscreen() {
+        if (document.fullscreenElement) {
+            document.exitFullscreen();
+        } else {
+            document.documentElement.requestFullscreen();
+        }
+    }
 </script>
 
 <div class="hud" class:night={$isNight} class:rain={$isRaining}>
@@ -12,6 +21,11 @@
         <span class="res stone">🗻 {$resources.stone}</span>
         <span class="pop">👥 {$population.current}/{$population.max}</span>
     </div>
+
+    <!-- Top Right: Fullscreen Button -->
+    <button class="fullscreen-btn" on:click={toggleFullscreen}>
+        ⛶
+    </button>
 
     <!-- Bottom Left: Unit Actions -->
     {#if $selectedUnits.length > 0}
@@ -75,5 +89,25 @@
     /* Night tint on HUD elements */
     .hud.night .resources {
         background: rgba(0, 0, 30, 0.8);
+    }
+
+    /* Fullscreen button */
+    .fullscreen-btn {
+        position: absolute;
+        top: 0px;
+        right: 0px;
+        background: rgba(0,0,0,0.5);
+        border: 1px solid rgba(255,255,255,0.3);
+        color: white;
+        font-size: 18px;
+        line-height: 1;
+        padding: 6px;
+        border-radius: 4px;
+        cursor: pointer;
+        pointer-events: all;
+        transition: background 0.2s;
+    }
+    .fullscreen-btn:hover {
+        background: rgba(255,255,255,0.2);
     }
 </style>
