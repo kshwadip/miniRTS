@@ -31,6 +31,10 @@ export const NIGHT_DURATION_MS = 5  * 60 * 1000;  // 5 minutes
 export const PLAYER = 0;
 export const AI     = 1;
 
+// ─── RESOURCES AMOUNT ───
+export const GOLD_AMOUNT = 800;
+export const STONE_AMOUNT = 350;
+
 // ─── UNIT TYPES ───
 export const UNIT_TYPE = {
     VILLAGER:  'villager',
@@ -59,7 +63,7 @@ export const TERRAIN_FLAGS = {
     [TILE.WATER_SHALLOW]:  { walkable: true,  swimmable: true,  cavalryOk: true  },
     [TILE.DIRT]:           { walkable: true,  swimmable: false, cavalryOk: true  },
     [TILE.STONE_PATH]:     { walkable: true,  swimmable: false, cavalryOk: true  },
-    [TILE.FOREST]:         { walkable: true,  swimmable: false, cavalryOk: true  },
+    [TILE.FOREST]:         { walkable: false, swimmable: false, cavalryOk: false  },
     [TILE.GOLD_DEPOSIT]:   { walkable: false, swimmable: false, cavalryOk: false },
     [TILE.STONE_DEPOSIT]:  { walkable: false, swimmable: false, cavalryOk: false }
 };

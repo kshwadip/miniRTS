@@ -1,6 +1,5 @@
-import { TILE, TERRAIN_FLAGS, MAP_WIDTH, MAP_HEIGHT } from '../utils/Constants.js';
-import { tileToScreen } from '../utils/IsoMath.js';
-import { TILE_WIDTH, TILE_HEIGHT } from '../utils/Constants.js';
+import { TILE_WIDTH, TILE_HEIGHT, MAP_WIDTH, MAP_HEIGHT, TILE, GOLD_AMOUNT, STONE_AMOUNT, TERRAIN_FLAGS } from '../utils/Constants.js';
+import { tileToScreen, inBounds } from '../utils/IsoMath.js';
 
 export class TileMap {
     constructor(scene) {
@@ -36,6 +35,14 @@ export class TileMap {
         if (flags.swimmable && !unitCanSwim) return false;
         if (!flags.walkable && !flags.swimmable) return false;
         return true;
+    }
+
+    isBuildable(tileX, tileY) {
+        if (!inBounds(tileX, tileY, this.width, this.height)) return false;
+        const tile = this.getTile(tileX, tileY);
+        // Only grass is considered buildable for now.
+        // Add DIRT, STONE_PATH if you generate them later.
+        return tile === TILE.GRASS || tile === TILE.DIRT;
     }
 
     // ─── MAP GENERATION ───
@@ -99,11 +106,46 @@ export class TileMap {
         }
     }
 
+    /**
+     * Place 2 gold and 2 stone deposits near each starting position.
+     * @param {Array<{x: number, y: number}>} centers - [playerStart, aiStart]
+     */
+    placeStartingResources(centers) {
+        const depositTypes = [
+            { type: TILE.GOLD_DEPOSIT, amount: GOLD_AMOUNT, count: 2 },
+            { type: TILE.STONE_DEPOSIT, amount: STONE_AMOUNT, count: 2 }
+        ];
+        const RADIUS = 6; // tiles away from the town center
+
+        centers.forEach(center => {
+            depositTypes.forEach(({ type, amount, count }) => {
+                let placed = 0;
+                let attempts = 0;
+                while (placed < count && attempts < 300) {
+                    attempts++;
+                    const dx = Math.floor(Math.random() * (RADIUS * 2 + 1)) - RADIUS;
+                    const dy = Math.floor(Math.random() * (RADIUS * 2 + 1)) - RADIUS;
+                    const tx = center.x + dx;
+                    const ty = center.y + dy;
+                    // Must be buildable (grass/dirt) and not already a deposit
+                    if (this.isBuildable(tx, ty) && !this.resourceDeposits.has(`${tx},${ty}`)) {
+                        this.setTile(tx, ty, type);
+                        this.resourceDeposits.set(`${tx},${ty}`, { type, amount });
+                        placed++;
+                    }
+                }
+                if (placed < count) {
+                    console.warn(`Only placed ${placed}/${count} ${TILE[type]} deposits near`, center);
+                }
+            });
+        });
+    }
+
     _placeResources() {
         // Place gold and stone deposits away from water and edges
         const deposits = [
-            { type: TILE.GOLD_DEPOSIT,  count: 10, amount: 1000  },
-            { type: TILE.STONE_DEPOSIT, count: 10, amount: 1000 }
+            { type: TILE.GOLD_DEPOSIT,  count: 6, amount: GOLD_AMOUNT  },
+            { type: TILE.STONE_DEPOSIT, count: 6, amount: STONE_AMOUNT }
         ];
 
         deposits.forEach(({ type, count, amount }) => {

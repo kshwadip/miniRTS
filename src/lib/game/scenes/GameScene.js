@@ -171,22 +171,38 @@ export class GameScene extends Phaser.Scene {
 
         // AI starting buildings
         this.buildingManager.createBuilding(AI, 'village_hall', aiStart.x, aiStart.y);
+
+        this.tileMap.placeStartingResources([playerStart, aiStart]);
     }
 
-    _findStartTile(preferX, preferY) {
-        // Find nearest walkable tile to preferred position
-        for (let r = 0; r < 10; r++) {
+    _findStartTile(preferX, preferY, size = 2) {
+        const maxSearch = 20;
+        for (let r = 0; r < maxSearch; r++) {
             for (let dx = -r; dx <= r; dx++) {
                 for (let dy = -r; dy <= r; dy++) {
                     const x = preferX + dx;
                     const y = preferY + dy;
-                    if (this.tileMap.isWalkable(x, y, false, false)) {
+                    let ok = true;
+                    // Check every tile in the building's footprint
+                    for (let fy = 0; fy < size; fy++) {
+                        for (let fx = 0; fx < size; fx++) {
+                            const tx = x + fx;
+                            const ty = y + fy;
+                            if (!this.tileMap.isBuildable(tx, ty)) {
+                                ok = false;
+                                break;
+                            }
+                        }
+                        if (!ok) break;
+                    }
+                    if (ok) {
                         return { x, y };
                     }
                 }
             }
         }
-        return { x: preferX, y: preferY }; // Fallback
+        // Fallback – should never happen on a valid map
+        return { x: preferX, y: preferY };
     }
 
     // ─── CONTROLS SETUP ──────────────────────────────────────────────────────
