@@ -309,15 +309,15 @@ export class BuildingManager {
         const affordable = resourceManager.canAfford(owner, def.cost);
         if (!affordable) return { ok: false, reason: 'Cannot afford' };
 
-        // Check all tiles in footprint are walkable and unoccupied
+        // Check all tiles in footprint are buildable and unoccupied
         const size = def.size;
         for (let dy = 0; dy < size; dy++) {
             for (let dx = 0; dx < size; dx++) {
                 const tx = tileX + dx;
                 const ty = tileY + dy;
 
-                if (!tileMap.isWalkable(tx, ty, false, false)) {
-                    return { ok: false, reason: 'Tile not walkable' };
+                if (!tileMap.isBuildable(tx, ty)) {
+                    return { ok: false, reason: 'Tile not buildable' };
                 }
 
                 if (this.getBuildingAtTile(null, tx, ty)) {

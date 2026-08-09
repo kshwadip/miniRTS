@@ -2,11 +2,12 @@ import Phaser from 'phaser';
 import Hammer from 'hammerjs';
 
 import { TileMap } from '../systems/TileMap';
+import { FogOfWar }        from '../systems/FogOfWar.js';
 import { ResourceManager } from '../systems/ResourceManager.js';
 import { UnitManager }     from '../systems/UnitManager.js';
 import { BuildingManager } from '../systems/BuildingManager.js';
 import { tileToScreen, screenToTile } from '../utils/IsoMath.js';
-import { MAP_WIDTH, MAP_HEIGHT, TILE_WIDTH, TILE_HEIGHT, PLAYER, AI, UNIT_TYPE } from '../utils/Constants.js';
+import { MAP_WIDTH, MAP_HEIGHT, TILE_WIDTH, TILE_HEIGHT, PLAYER, AI, UNIT_TYPE, VISIBILITY } from '../utils/Constants.js';
 import { resources, population, isNight, isRaining, timeRemaining, selectedUnits, gameMessage } from '$lib/stores/gameState.js';
 
 export class GameScene extends Phaser.Scene {
@@ -27,7 +28,8 @@ export class GameScene extends Phaser.Scene {
         this.cameras.main.setZoom(1);
 
         // ── Systems ──
-        this.tileMap = new TileMap(this);
+        this.tileMap         = new TileMap(this);
+        this.fogOfWar        = new FogOfWar(this);
         this.resourceManager = new ResourceManager();
         this.unitManager     = new UnitManager(this);
         this.buildingManager = new BuildingManager(this);
@@ -51,11 +53,12 @@ export class GameScene extends Phaser.Scene {
 
         // ── Fog of war initial reveal around starting positions ──
         const playerUnits = this.unitManager.getUnitsForOwner(PLAYER);
+        this.fogOfWar.update(playerUnits);
 
         // ── Controls (desktop/mouse) ──
         this._setupControls();
 
-        // ─── HAMMER.JS – mobile gestures ──────────────────────────────────────
+        // ── Hammerjs Controls ── 
         if (!this.sys.game.device.os.desktop) {
             const canvas = this.sys.game.canvas;
             const hammer = new Hammer(canvas);
@@ -185,7 +188,7 @@ export class GameScene extends Phaser.Scene {
         // AI starting units
         this.unitManager.createUnit(AI, UNIT_TYPE.VILLAGER, aiStart.x + 2, aiStart.y + 1);
         this.unitManager.createUnit(AI, UNIT_TYPE.VILLAGER, aiStart.x + 3, aiStart.y + 1);
-        this.unitManager.createUnit(AI, UNIT_TYPE.INFANTRY, aiStart.x + 5, aiStart.y + 2);
+        this.unitManager.createUnit(AI, UNIT_TYPE.VILLAGER, aiStart.x + 5, aiStart.y + 2);
 
         this.tileMap.placeStartingResources([playerStart, aiStart]);
     }
