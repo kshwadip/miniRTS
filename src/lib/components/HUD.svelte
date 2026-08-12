@@ -1,5 +1,8 @@
 <script>
     import { resources, population, isNight, isRaining, selectedUnits } from '$lib/stores/gameState.js';
+    import UnitPanel from './UnitPanel.svelte';
+
+    export let game = null;
 
     // Fullscreen toggle function
     function toggleFullscreen() {
@@ -29,23 +32,7 @@
 
     <!-- Bottom Left: Unit Actions -->
     {#if $selectedUnits.length > 0}
-    <div class="unit-panel">
-        <div class="selected-units">
-            {#each $selectedUnits as unit}
-                <div class="unit-icon">{unit.type}</div>
-            {/each}
-        </div>
-        <div class="action-buttons">
-            <button>Move</button>
-            <button>Attack</button>
-            <button>Stop</button>
-            {#if $selectedUnits[0]?.type === 'villager'}
-                <button>Gather</button>
-                <button>Build</button>
-            {/if}
-            <button>Sneak</button>
-        </div>
-    </div>
+    <UnitPanel {game}/>
     {/if}
 
 </div>
@@ -58,7 +45,7 @@
     }
 
     /* Only interactive elements get pointer-events back */
-    button, .action-buttons, .unit-panel {
+    button {
         pointer-events: all;
     }
 
@@ -74,16 +61,6 @@
         color: white;
         font-family: monospace;
         font-size: 14px;
-    }
-
-    .unit-panel {
-        position: absolute;
-        bottom: 12px;
-        left: 12px;
-        background: rgba(0,0,0,0.7);
-        padding: 12px;
-        border-radius: 4px;
-        color: white;
     }
 
     /* Night tint on HUD elements */

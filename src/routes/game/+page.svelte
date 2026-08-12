@@ -20,7 +20,7 @@
 <!-- The canvas container sits behind the HUD -->
 <div class="game-wrapper">
     <div bind:this={canvasContainer} id="game-container"></div>
-    <HUD />
+    <HUD {game}/>
 </div>
 
 <style>

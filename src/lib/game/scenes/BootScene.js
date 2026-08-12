@@ -46,6 +46,7 @@ export class BootScene extends Phaser.Scene {
         this._generateTileTextures();
         this._generateUnitTextures();
         this._generateBuildingTextures();
+        this._generateUITextures();
 
         this.time.delayedCall(300, () => {
             this.scene.start('GameScene');
@@ -443,5 +444,31 @@ export class BootScene extends Phaser.Scene {
             g.generateTexture(`building_${key}`, 64, 64);
             g.destroy();
         });
+    }
+
+    // ─── UI TEXTURES ─────────────────────────────────────────────────────────
+    _generateUITextures() {
+        // Selection circle — shown under selected units
+        const selCircle = this.add.graphics();
+        selCircle.lineStyle(2, 0x00ff88, 0.8);
+        selCircle.strokeEllipse(24, 28, 40, 16);
+        selCircle.generateTexture('ui_selection_circle', 48, 32);
+        selCircle.destroy();
+
+        // Unit action buttons — generic rounded rect
+        const btn = this.add.graphics();
+        btn.fillStyle(0x2a3a4a);
+        btn.fillRoundedRect(0, 0, 48, 48, 6);
+        btn.lineStyle(1, 0x4a6a8a);
+        btn.strokeRoundedRect(0, 0, 48, 48, 6);
+        btn.generateTexture('ui_button', 48, 48);
+        btn.destroy();
+
+        // Health bar background
+        const hpBg = this.add.graphics();
+        hpBg.fillStyle(0x333333);
+        hpBg.fillRect(0, 0, 32, 4);
+        hpBg.generateTexture('ui_hp_bar_bg', 32, 4);
+        hpBg.destroy();
     }
 }

@@ -4,10 +4,11 @@ import Hammer from 'hammerjs';
 import { TileMap } from '../systems/TileMap';
 import { FogOfWar }        from '../systems/FogOfWar.js';
 import { ResourceManager } from '../systems/ResourceManager.js';
+import { PathFinder }      from '../systems/PathFinder.js';
 import { UnitManager }     from '../systems/UnitManager.js';
 import { BuildingManager } from '../systems/BuildingManager.js';
 import { tileToScreen, screenToTile } from '../utils/IsoMath.js';
-import { MAP_WIDTH, MAP_HEIGHT, TILE_WIDTH, TILE_HEIGHT, PLAYER, AI, UNIT_TYPE, VISIBILITY } from '../utils/Constants.js';
+import { MAP_WIDTH, MAP_HEIGHT, TILE_WIDTH, TILE_HEIGHT, PLAYER, AI, UNIT_TYPE, VISIBILITY, TICK_MS } from '../utils/Constants.js';
 import { resources, population, isNight, isRaining, timeRemaining, selectedUnits, gameMessage } from '$lib/stores/gameState.js';
 
 export class GameScene extends Phaser.Scene {
@@ -31,6 +32,7 @@ export class GameScene extends Phaser.Scene {
         this.tileMap         = new TileMap(this);
         this.fogOfWar        = new FogOfWar(this);
         this.resourceManager = new ResourceManager();
+        this.pathFinder      = new PathFinder(this.tileMap);
         this.unitManager     = new UnitManager(this);
         this.buildingManager = new BuildingManager(this);
 
@@ -43,6 +45,17 @@ export class GameScene extends Phaser.Scene {
             const { x, y } = tileToScreen(playerHall.tileX, playerHall.tileY);
             this.cameras.main.centerOn(x, y);
         }
+
+        // ── Game loop state ──
+        this.tickTimer    = 0;
+        this.tickCount    = 0;
+        this.gameRunning  = true;
+
+         // ── Selection state ──
+        this.selectedUnitList = [];
+        this.selectionMode    = false; // false = scroll mode, true = box-select mode
+        this.selectionBox     = null;
+        this.selectionStart   = null;
 
         // ── Resource store sync ──
         this.resourceManager.onResourceChange = (owner, res) => {
@@ -151,8 +164,22 @@ export class GameScene extends Phaser.Scene {
 
     // ─── UPDATE ──────────────────────────────────────────────────────────────
     update(time, delta) {
+        if (!this.gameRunning) return;
+
         this._updateEdgeScroll();
         this._updateKeyboardScroll();
+
+        // Fixed-rate game logic tick
+        this.tickTimer += delta;
+        while (this.tickTimer >= TICK_MS) {
+            this.tickTimer -= TICK_MS;
+            this._gameTick(delta);
+        }
+
+        // Render-rate: selection box drawing
+        if (this.selectionMode && this.selectionStart && this.input.activePointer.isDown) {
+            this._drawSelectionBox();
+        }
     }
 
     // ─── SHUTDOWN — runs when scene stops ────────────────────────────────────
@@ -166,6 +193,41 @@ export class GameScene extends Phaser.Scene {
         document.removeEventListener('mouseenter', this._onMouseEnter);
         document.removeEventListener('mouseleave', this._onMouseLeave);
         clearTimeout(this._longPress?.timer);
+    }
+
+    _gameTick() {
+        this.tickCount++;
+
+        const playerUnits   = this.unitManager.getUnitsForOwner(PLAYER);
+        const aiUnits       = this.unitManager.getUnitsForOwner(AI);
+        const allUnits      = [...playerUnits, ...aiUnits];
+        const allBuildings  = this.buildingManager.getAllBuildings();
+
+        allUnits.forEach(u => {
+            if (u.alive) u.tickMove(this.tileMap);
+        });
+
+        playerUnits.filter(u => u.type === UNIT_TYPE.VILLAGER && u.alive).forEach(v => {
+                v.tickGather(this.resourceManager);
+                v.tickDropoff(this.resourceManager);
+        });
+
+        allBuildings.forEach(b => {
+            if (b.alive) {
+                const newUnit = b.tickProduction(this.unitManager);
+            }
+        });
+
+        this.unitManager.removeDeadUnits();
+        this.buildingManager.removeDestroyedBuildings();
+
+        const alivePlayerUnits = this.unitManager.getUnitsForOwner(PLAYER);
+        this.fogOfWar.update(alivePlayerUnits);
+
+        const totalPop = alivePlayerUnits.length;
+        population.set({ current: totalPop, max: 75 });
+
+        this._updateStores();
     }
 
     // ─── STARTING POSITIONS ──────────────────────────────────────────────────
@@ -227,26 +289,7 @@ export class GameScene extends Phaser.Scene {
     _setupControls() {
         const cam = this.cameras.main;
         const isDesktop = this.sys.game.device.os.desktop;
-
-        // ─── EDGE SCROLL (desktop only) ───
-        const EDGE_SIZE = 40;
-        const EDGE_SPEED = 12;
-        this.edgeScroll = {
-            enabled: isDesktop,
-            edgeSize: EDGE_SIZE,
-            speed: EDGE_SPEED
-        };
-
-        // ─── POINTER WINDOW TRACKING (for edge scroll) ───
-        this.pointerInWindow = true;
-        this._onMouseEnter = () => { this.pointerInWindow = true; };
-        this._onMouseLeave = () => { this.pointerInWindow = false; };
-        document.addEventListener('mouseenter', this._onMouseEnter);
-        document.addEventListener('mouseleave', this._onMouseLeave);
-
-        // ─── KEYBOARD SCROLL ────────────────────────────────────────────
-        this.wasd = this.input.keyboard.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT');
-
+        
         // ─── FULLSCREEN TOGGLE ──────────────────────────────────────────
         this.input.keyboard.on('keydown-BACKTICK', () => {
             if (document.fullscreenElement) {
@@ -256,37 +299,86 @@ export class GameScene extends Phaser.Scene {
             }
         });
 
-        // ─── SELECTION MODE STATE ──────────────────────────────────────
-        this.selectionMode = false;
-        this.selectionRect = null;
-        this.selectionStart = null;
-
         // ─── DESKTOP ONLY – mouse events ──────────────────────────────
         if (isDesktop) {
-            // // Left‑click → select
-            // this.input.on('pointerup', (pointer) => {
-            //     if (!pointer.leftButtonReleased()) return;
-            //     if (Math.abs(pointer.upX - pointer.downX) > 10) return;
-            //     if (Math.abs(pointer.upY - pointer.downY) > 10) return;
+            // ─── SELECTION MODE STATE ─────
+            this.selectionMode = false;
+            this.selectionRect = null;
+            this.selectionStart = null;
 
-            //     const worldPos = cam.getWorldPoint(pointer.x, pointer.y);
-            //     const tilePos = screenToTile(worldPos.x, worldPos.y);
-            //     this._handleTap(tilePos.tileX, tilePos.tileY, pointer);
-            // });
+            // ─── EDGE SCROLL ───
+            const EDGE_SIZE = 40;
+            const EDGE_SPEED = 12;
+            this.edgeScroll = {
+                enabled: isDesktop,
+                edgeSize: EDGE_SIZE,
+                speed: EDGE_SPEED
+            };
 
-            // // Right‑click → command
-            // this.input.on('pointerdown', (pointer) => {
-            //     if (!pointer.rightButtonDown()) return;
-            //     const worldPos = cam.getWorldPoint(pointer.x, pointer.y);
-            //     const tilePos = screenToTile(worldPos.x, worldPos.y);
-            //     this._issueCommand(tilePos.tileX, tilePos.tileY);
-            // });
+            // ─── POINTER WINDOW TRACKING (for edge scroll) ───
+            this.pointerInWindow = true;
+            this._onMouseEnter = () => { this.pointerInWindow = true; };
+            this._onMouseLeave = () => { this.pointerInWindow = false; };
+            document.addEventListener('mouseenter', this._onMouseEnter);
+            document.addEventListener('mouseleave', this._onMouseLeave);
+
+            // Left‑click → select
+            this.input.on('pointerup', (pointer) => {
+                if (!pointer.leftButtonReleased()) return;
+                if (Math.abs(pointer.upX - pointer.downX) > 10) return;
+                if (Math.abs(pointer.upY - pointer.downY) > 10) return;
+
+                const worldPos = cam.getWorldPoint(pointer.x, pointer.y);
+                const tilePos = screenToTile(worldPos.x, worldPos.y);
+                this._handleTap(tilePos.tileX, tilePos.tileY, pointer);
+            });
+
+            // Right‑click → command
+            this.input.on('pointerdown', (pointer) => {
+                if (!pointer.rightButtonDown()) return;
+                const worldPos = cam.getWorldPoint(pointer.x, pointer.y);
+                const tilePos = screenToTile(worldPos.x, worldPos.y);
+                this._issueCommand(tilePos.tileX, tilePos.tileY);
+            });
+
+            this.input.on('pointerdown', (pointer) => {
+                if (pointer.leftButtonDown()) {
+                    this.selectionStart = { x: pointer.worldX, y: pointer.worldY };
+                    if (this.selectionBox) this.selectionBox.destroy();
+                    this.selectionBox = this.add.graphics();
+                    this.selectionBox.setDepth(10000);
+                }
+            });
+
+            // _drawSelectionBox
+            this.input.on('pointermove', (pointer) => {
+                if (pointer.isDown && pointer.leftButtonDown() && this.selectionStart) {
+                    // draw the box (already implemented in _drawSelectionBox)
+                    this._drawSelectionBox();
+                }
+            });
+
+            // _finaliseBoxSelection 
+            this.input.on('pointerup', (pointer) => {
+                if (this.selectionStart && pointer.leftButtonReleased()) {
+                    this._finaliseBoxSelection();
+                    this.selectionStart = null;
+                }
+            });
+
+            // ── ESC: deselect ──
+            this.input.keyboard.on('keydown-ESC', () => {
+                this._clearSelection();
+            });
 
             // Scroll wheel → zoom
             this.input.on('wheel', (pointer, gameObjects, deltaX, deltaY) => {
                 const newZoom = Phaser.Math.Clamp(cam.zoom - deltaY * 0.001, 0.5, 2.0);
                 cam.setZoom(newZoom);
             });
+
+            // ─── KEYBOARD SCROLL ──────
+            this.wasd = this.input.keyboard.addKeys('up,down,left,right,UP,DOWN,LEFT,RIGHT');
         }
 
         // On mobile, we do NOT attach any pointer events – Hammer handles everything.
@@ -318,12 +410,195 @@ export class GameScene extends Phaser.Scene {
     _updateKeyboardScroll() {
         const speed = 12;
         const cam = this.cameras.main;
-        const { W, A, S, D, UP, DOWN, LEFT, RIGHT } = this.wasd;
+        const { up,down,left,right,UP,DOWN,LEFT,RIGHT } = this.wasd;
 
-        if (A.isDown || LEFT.isDown) cam.scrollX -= speed;
-        if (D.isDown || RIGHT.isDown) cam.scrollX += speed;
-        if (W.isDown || UP.isDown) cam.scrollY -= speed;
-        if (S.isDown || DOWN.isDown) cam.scrollY += speed;
+        if (LEFT.isDown) cam.scrollX -= speed;
+        if (RIGHT.isDown) cam.scrollX += speed;
+        if (UP.isDown) cam.scrollY -= speed;
+        if (DOWN.isDown) cam.scrollY += speed;
+    }
+
+    // ─── TAP HANDLING ────────────────────────────────────────────────────────
+
+    _handleTap(tileX, tileY, pointer) {
+        if (this.selectedUnitList.length > 0 && !pointer.leftButtonDown()) {
+            // Units are selected and this is a right-tap — issue command
+            this._issueCommand(tileX, tileY);
+            return;
+        }
+
+        // Try to select a unit at this tile
+        const unit = this.unitManager.getUnitAtTile(PLAYER, tileX, tileY);
+        if (unit) {
+            if (!pointer.shiftKey) {
+                this._clearSelection();
+            }
+            this._selectUnit(unit);
+            return;
+        }
+
+        // Tapped empty tile while units selected — move command
+        if (this.selectedUnitList.length > 0) {
+            this._issueCommand(tileX, tileY);
+        } else {
+            // Tapped nothing — deselect
+            this._clearSelection();
+        }
+    }
+
+    _issueCommand(tileX, tileY) {
+        if (this.selectedUnitList.length === 0) return;
+
+        // Move command — pathfind each unit to the target tile
+        // Offset units in a formation to avoid stacking
+        this.selectedUnitList.forEach((unit, index) => {
+            const offset = this._formationOffset(index, this.selectedUnitList.length);
+            const destX = tileX + offset.dx;
+            const destY = tileY + offset.dy;
+            if (!this.tileMap.isWalkable(unit.tileX, unit.tileY, unit.canSwim, unit.isCavalry)) {
+                return; // Unit is stuck on unwalkable tile – don't attempt pathfinding
+            }
+            const path    = this.pathFinder.findPath(
+                unit.tileX, unit.tileY,
+                destX, destY,
+                unit.canSwim,
+                unit.isCavalry
+            );
+            unit.setPath(path);
+            unit.target = null; // Clear attack target
+        });
+    }
+
+    _formationOffset(index, total) {
+        // Simple spread formation — units fan out around the target
+        if (total === 1) return { dx: 0, dy: 0 };
+        const row = Math.floor(index / 3);
+        const col = index % 3;
+        return { dx: col - 1, dy: row };
+    }
+
+     // ─── SELECTION MANAGEMENT ────────────────────────────────────────────────
+    _selectUnit(unit) {
+        if (this.selectedUnitList.includes(unit)) return;
+        this.selectedUnitList.push(unit);
+
+        // Visual selection indicator
+        const { x, y } = tileToScreen(unit.tileX, unit.tileY);
+        unit.selectionCircle = this.add.image(x, y, 'ui_selection_circle');
+        unit.selectionCircle.setOrigin(0.5, 0.5);
+        unit.selectionCircle.setDepth(unit.sprite.depth - 1);
+        unit.selectionCircle.setAlpha(0.8);
+
+        this._updateSelectionStore();
+    }
+
+    _clearSelection() {
+        this.selectedUnitList.forEach(unit => {
+            if (unit.selectionCircle) {
+                unit.selectionCircle.destroy();
+                unit.selectionCircle = null;
+            }
+        });
+        this.selectedUnitList = [];
+        this.selectedBuilding  = null;
+        this._updateSelectionStore();
+
+        if (this.selectionBox) {
+            this.selectionBox.destroy();
+            this.selectionBox   = null;
+        }
+        this.selectionStart = null;
+    }
+
+    _drawSelectionBox() {
+        if (!this.selectionBox || !this.selectionStart) return;
+        const ptr = this.input.activePointer;
+        this.selectionBox.clear();
+        this.selectionBox.lineStyle(1, 0x00ff88, 0.8);
+        this.selectionBox.fillStyle(0x00ff88, 0.08);
+        this.selectionBox.strokeRect(
+            this.selectionStart.x,
+            this.selectionStart.y,
+            ptr.worldX - this.selectionStart.x,
+            ptr.worldY - this.selectionStart.y
+        );
+        this.selectionBox.fillRect(
+            this.selectionStart.x,
+            this.selectionStart.y,
+            ptr.worldX - this.selectionStart.x,
+            ptr.worldY - this.selectionStart.y
+        );
+    }
+
+    _finaliseBoxSelection() {
+        if (!this.selectionStart || !this.selectionBox) return;
+        const ptr = this.input.activePointer;
+
+        const minX = Math.min(this.selectionStart.x, ptr.worldX);
+        const maxX = Math.max(this.selectionStart.x, ptr.worldX);
+        const minY = Math.min(this.selectionStart.y, ptr.worldY);
+        const maxY = Math.max(this.selectionStart.y, ptr.worldY);
+
+        const rect = new Phaser.Geom.Rectangle(minX, minY, maxX - minX, maxY - minY);
+
+        this._clearSelection();
+
+        this.unitManager.getUnitsForOwner(PLAYER).forEach(unit => {
+            if (!unit.alive) return;
+            const { x, y } = tileToScreen(unit.tileX, unit.tileY);
+            if (rect.contains(x, y)) {
+                this._selectUnit(unit);
+            }
+        });
+
+        if (this.selectionBox) {
+            this.selectionBox.destroy();
+            this.selectionBox = null;
+        }
+    }
+
+    _updateSelectionStore() {
+        selectedUnits.set(this.selectedUnitList.map(u => ({
+            type: u.type,
+            hp:   Math.floor(u.currentHp / u.maxHp * 100),
+            id:   u.id
+        })));
+    }
+
+    // ─── Public methods called by Svelte HUD buttons ────────────────────────────────────────────────
+    commandAttackMove(tileX, tileY) {
+        this.selectedUnitList.forEach((unit, i) => {
+            const offset = this._formationOffset(i, this.selectedUnitList.length);
+            const path   = this.pathFinder.findPath(
+                unit.tileX, unit.tileY,
+                tileX + offset.dx, tileY + offset.dy,
+                unit.canSwim, unit.isCavalry
+            );
+            unit.setPath(path);
+            unit.attackMove = true; // Attack any enemy encountered en route
+        });
+    }
+    
+    commandSubmerge() {
+        this.selectedUnitList.forEach(u => {
+            if (u.canSwim && !u.isSubmerged) u.submerge();
+            else if (u.isSubmerged) u.surface();
+        });
+    }
+
+    commandSneakStance() {
+        this.selectedUnitList.forEach(u => {
+            if (u.type !== UNIT_TYPE.CAVALRY) {
+                u.setSneakStance(!u.sneakStance);
+            }
+        });
+    }
+
+    commandStop() {
+        this.selectedUnitList.forEach(u => {
+            u.path   = [];
+            u.target = null;
+        });
     }
 
     // ─── SVELTE STORE UPDATES ────────────────────────────────────────────────
