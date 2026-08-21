@@ -37,7 +37,7 @@ export class GameScene extends Phaser.Scene {
         this.buildingManager = new BuildingManager(this);
 
         this.tileMap.generate();
-        this._placeStartingPositions();
+       this._placeStartingPositions();
 
         // ── Camera start ──
         const playerHall = this.buildingManager.getBuildingsForOwner(PLAYER)[0];
@@ -51,7 +51,7 @@ export class GameScene extends Phaser.Scene {
         this.tickCount    = 0;
         this.gameRunning  = true;
 
-         // ── Selection state ──
+        // ── Selection state ──
         this.selectedUnitList = [];
         this.selectionMode    = false; // false = scroll mode, true = box-select mode
         this.selectionBox     = null;
@@ -289,7 +289,21 @@ export class GameScene extends Phaser.Scene {
     _setupControls() {
         const cam = this.cameras.main;
         const isDesktop = this.sys.game.device.os.desktop;
-        
+
+        // ─── SELECTION MODE STATE ─────
+        this.selectionMode = false;
+        this.selectionRect = null;
+        this.selectionStart = null;
+
+        // ─── EDGE SCROLL ───
+        const EDGE_SIZE = 40;
+        const EDGE_SPEED = 12;
+        this.edgeScroll = {
+            enabled: isDesktop,
+            edgeSize: EDGE_SIZE,
+            speed: EDGE_SPEED
+        };
+
         // ─── FULLSCREEN TOGGLE ──────────────────────────────────────────
         this.input.keyboard.on('keydown-BACKTICK', () => {
             if (document.fullscreenElement) {
@@ -301,19 +315,7 @@ export class GameScene extends Phaser.Scene {
 
         // ─── DESKTOP ONLY – mouse events ──────────────────────────────
         if (isDesktop) {
-            // ─── SELECTION MODE STATE ─────
-            this.selectionMode = false;
-            this.selectionRect = null;
-            this.selectionStart = null;
 
-            // ─── EDGE SCROLL ───
-            const EDGE_SIZE = 40;
-            const EDGE_SPEED = 12;
-            this.edgeScroll = {
-                enabled: isDesktop,
-                edgeSize: EDGE_SIZE,
-                speed: EDGE_SPEED
-            };
 
             // ─── POINTER WINDOW TRACKING (for edge scroll) ───
             this.pointerInWindow = true;
@@ -321,24 +323,17 @@ export class GameScene extends Phaser.Scene {
             this._onMouseLeave = () => { this.pointerInWindow = false; };
             document.addEventListener('mouseenter', this._onMouseEnter);
             document.addEventListener('mouseleave', this._onMouseLeave);
+            this.game.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
             // Left‑click → select
             this.input.on('pointerup', (pointer) => {
-                if (!pointer.leftButtonReleased()) return;
+                // Only act if it's a tap (not a drag)
                 if (Math.abs(pointer.upX - pointer.downX) > 10) return;
                 if (Math.abs(pointer.upY - pointer.downY) > 10) return;
 
                 const worldPos = cam.getWorldPoint(pointer.x, pointer.y);
                 const tilePos = screenToTile(worldPos.x, worldPos.y);
                 this._handleTap(tilePos.tileX, tilePos.tileY, pointer);
-            });
-
-            // Right‑click → command
-            this.input.on('pointerdown', (pointer) => {
-                if (!pointer.rightButtonDown()) return;
-                const worldPos = cam.getWorldPoint(pointer.x, pointer.y);
-                const tilePos = screenToTile(worldPos.x, worldPos.y);
-                this._issueCommand(tilePos.tileX, tilePos.tileY);
             });
 
             this.input.on('pointerdown', (pointer) => {
@@ -377,9 +372,12 @@ export class GameScene extends Phaser.Scene {
                 cam.setZoom(newZoom);
             });
 
-            // ─── KEYBOARD SCROLL ──────
-            this.wasd = this.input.keyboard.addKeys('up,down,left,right,UP,DOWN,LEFT,RIGHT');
+
         }
+
+        // ─── KEYBOARD SCROLL ──────
+        this.wasd = this.input.keyboard.addKeys('up,down,left,right,UP,DOWN,LEFT,RIGHT');
+
 
         // On mobile, we do NOT attach any pointer events – Hammer handles everything.
     }
@@ -421,27 +419,27 @@ export class GameScene extends Phaser.Scene {
     // ─── TAP HANDLING ────────────────────────────────────────────────────────
 
     _handleTap(tileX, tileY, pointer) {
-        if (this.selectedUnitList.length > 0 && !pointer.leftButtonDown()) {
-            // Units are selected and this is a right-tap — issue command
+        const isRightClick = pointer && pointer.button === 2;
+
+        // If units are selected and it's a right-click, issue command
+        if (this.selectedUnitList.length > 0 && isRightClick) {
             this._issueCommand(tileX, tileY);
             return;
         }
 
-        // Try to select a unit at this tile
+        // Try to select a unit at the tapped tile
         const unit = this.unitManager.getUnitAtTile(PLAYER, tileX, tileY);
         if (unit) {
-            if (!pointer.shiftKey) {
-                this._clearSelection();
-            }
+            this._clearSelection(); // always clear previous selection
             this._selectUnit(unit);
             return;
         }
 
-        // Tapped empty tile while units selected — move command
+        // Tapped empty tile while units selected → move command (left-click)
         if (this.selectedUnitList.length > 0) {
             this._issueCommand(tileX, tileY);
         } else {
-            // Tapped nothing — deselect
+            // Tapped nothing → deselect
             this._clearSelection();
         }
     }
@@ -599,6 +597,10 @@ export class GameScene extends Phaser.Scene {
             u.path   = [];
             u.target = null;
         });
+    }
+
+    commandClearSelection(){
+        this._clearSelection();
     }
 
     // ─── SVELTE STORE UPDATES ────────────────────────────────────────────────

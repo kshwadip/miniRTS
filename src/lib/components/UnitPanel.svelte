@@ -25,6 +25,10 @@
     };
 
     // ── Action handlers — call public methods on GameScene ──
+    function cmdDeSelect(){
+        getScene()?.commandClearSelection();
+    }
+
     function cmdStop() {
         getScene()?.commandStop();
     }
@@ -92,6 +96,14 @@
 
     <!-- ── Action buttons ── -->
     <div class="actions">
+
+        {#if units}
+            <button class="action-btn" on:click={cmdDeSelect} title="DeSelect">
+                <span>■</span>
+                <label for="stop">Deselect</label>
+            </button>
+        {/if}
+
         <button class="action-btn" on:click={cmdStop} title="Stop">
             <span>■</span>
             <label for="stop">Stop</label>
@@ -124,6 +136,7 @@
 {/if}
 
 <style>
+    /* ── Base (desktop) styles ── */
     .unit-panel {
         position:   absolute;
         bottom:     12px;
@@ -138,9 +151,17 @@
         font-size:  12px;
         pointer-events: all;
         user-select: none;
+        max-height: 70vh;          /* prevent overflow off screen */
+        overflow-y: auto;          /* allow internal scroll if needed */
+        box-sizing: border-box;
     }
 
-    /* ── Portraits ── */
+    /* Hide scrollbar on mobile (optional) */
+    .unit-panel::-webkit-scrollbar {
+        width: 0;
+        background: transparent;
+    }
+
     .portraits {
         display:         flex;
         flex-wrap:       wrap;
@@ -191,7 +212,6 @@
     .hp-fill.mid  { background: #ccaa00; }
     .hp-fill.low  { background: #cc2200; }
 
-    /* ── Info row ── */
     .unit-info {
         display:         flex;
         align-items:     baseline;
@@ -203,14 +223,12 @@
     .unit-count { color: #aaa; }
     .unit-hp    { margin-left: auto; color: #88cc88; font-size: 11px; }
 
-    /* ── Divider ── */
     .divider {
         height:       1px;
         background:   rgba(74, 106, 138, 0.4);
         margin-bottom: 8px;
     }
 
-    /* ── Action buttons ── */
     .actions {
         display: flex;
         gap:     6px;
@@ -249,4 +267,95 @@
 
     .action-btn.build { border-color: rgba(138, 106, 74, 0.5); }
     .action-btn.build:hover { border-color: rgba(138,106,74,0.9); }
+
+    /* ── Mobile first – shrink aggressively ── */
+    @media (max-width: 2160px) {
+        .unit-panel {
+            left:       4px;
+            right:      4px;
+            bottom:     4px;
+            width:      290px;
+            padding:    6px 6px;
+            border-radius: 6px;
+            font-size:  10px;
+            max-height: 50vh;          /* limit height, scroll if needed */
+            overflow-y: auto;
+        }
+
+        .portraits {
+            gap:         3px;
+            margin-bottom: 4px;
+        }
+
+        .portrait {
+            width:        30px;
+            height:       30px;
+            border-width: 1px;
+        }
+
+        .portrait .icon {
+            font-size: 14px;
+        }
+
+        .portrait.overflow {
+            font-size: 8px;
+        }
+
+        .hp-bar {
+            height: 2px;
+            bottom: 1px;
+            left:   1px;
+            right:  1px;
+        }
+
+        .unit-info {
+            gap:       4px;
+            font-size: 9px;
+            margin-bottom: 3px;
+        }
+
+        .unit-name {
+            font-size: 10px;
+        }
+        .unit-hp {
+            font-size: 8px;
+        }
+
+        .divider {
+            margin-bottom: 3px;
+        }
+
+        .actions {
+            gap: 3px;
+        }
+
+        .action-btn {
+            width:         50px;
+            height:        32px;
+            border-radius: 3px;
+            gap:           0px;
+        }
+
+        .action-btn span {
+            font-size: 14px;
+        }
+
+        /* Extra small (≤ 400px) – even smaller portraits & buttons */
+        @media (max-width: 400px) {
+            .portrait {
+                width:  26px;
+                height: 26px;
+            }
+            .portrait .icon {
+                font-size: 12px;
+            }
+            .action-btn {
+                width:  28px;
+                height: 28px;
+            }
+            .action-btn span {
+                font-size: 12px;
+            }
+        }
+    }
 </style>
